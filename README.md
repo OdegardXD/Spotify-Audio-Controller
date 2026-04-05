@@ -1,5 +1,9 @@
 # Spotify Audio Controller   
 
+## About   
+This is a program that lets you bind a hotkey to change your spotify volume using the spotify API.   
+It lives in your tray and works in the background.   
+
 ## How to use:   
 Go to https://developer.spotify.com/dashboard   
 Make a new "app"   
