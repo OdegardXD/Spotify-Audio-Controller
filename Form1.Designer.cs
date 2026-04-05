@@ -35,6 +35,7 @@
             exitToolStripMenuItem = new ToolStripMenuItem();
             changeVolumeUpKeybindToolStripMenuItem = new ToolStripMenuItem();
             changeVolumeDownKeybindToolStripMenuItem = new ToolStripMenuItem();
+            timer1 = new System.Windows.Forms.Timer(components);
             contextMenuStrip1.SuspendLayout();
             SuspendLayout();
             // 
@@ -74,6 +75,12 @@
             changeVolumeDownKeybindToolStripMenuItem.Text = "Change Volume Down Keybind";
             changeVolumeDownKeybindToolStripMenuItem.Click += changeVolumeDownKeybindToolStripMenuItem_Click;
             // 
+            // timer1
+            // 
+            timer1.Enabled = true;
+            timer1.Interval = 10000;
+            timer1.Tick += timer1_Tick;
+            // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
@@ -92,5 +99,6 @@
         private ToolStripMenuItem exitToolStripMenuItem;
         private ToolStripMenuItem changeVolumeUpKeybindToolStripMenuItem;
         private ToolStripMenuItem changeVolumeDownKeybindToolStripMenuItem;
+        private System.Windows.Forms.Timer timer1;
     }
 }

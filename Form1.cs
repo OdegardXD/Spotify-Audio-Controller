@@ -34,7 +34,7 @@ namespace Spotify_Audio_Controller
         // Static constructor to ensure folder and log file are ready
         static Form1()
         {
-            Directory.CreateDirectory(AppDataFolder);
+            Directory.CreateDirectory(AppDataFolder); // Create the folder for storing config and log file
             File.WriteAllText(LogPath, ""); // Overwrite log file on each startup
         }
 
@@ -48,18 +48,19 @@ namespace Spotify_Audio_Controller
         public Form1()
         {
             InitializeComponent();
+            Log("Started app...");
 
-            this.KeyPreview = true;
-            this.ShowInTaskbar = false;
-            this.WindowState = FormWindowState.Minimized;
+            this.KeyPreview = true; // Some stuff to hide the main useless window
+            this.ShowInTaskbar = false; // Some more stuff to hide the main useless window
+            this.WindowState = FormWindowState.Minimized; // Even more stuff to hide the main useless window
 
-            Task.Run(async () => await StartAuthentication());
+            Task.Run(async () => await StartAuthentication()); // Start authentication on a different thread
         }
 
-        protected override void OnLoad(EventArgs e)
+        protected override void OnLoad(EventArgs e) // If user tries to load window (which shoudlnt be possible)
         {
             base.OnLoad(e);
-            this.Hide();
+            this.Hide(); // Hide the main window if it somehow appears
         }
 
         private async Task StartAuthentication()
@@ -91,7 +92,8 @@ namespace Spotify_Audio_Controller
                 Spotify = new SpotifyClient(config);
 
                 await SyncVolumeWithSpotify();
-                this.Invoke(new Action(() => {
+                this.Invoke(new Action(() =>
+                {
                     RegisterHotkeys();
                     notifyIcon1.ShowBalloonTip(3000, "Spotify Controller", "Ready (Auto-Refreshed)", ToolTipIcon.Info);
                 }));
@@ -132,7 +134,8 @@ namespace Spotify_Audio_Controller
                 Spotify = new SpotifyClient(SpotifyClientConfig.CreateDefault().WithAuthenticator(authenticator));
 
                 await SyncVolumeWithSpotify();
-                this.Invoke(new Action(() => {
+                this.Invoke(new Action(() =>
+                {
                     RegisterHotkeys();
                     notifyIcon1.ShowBalloonTip(3000, "Spotify Controller", "Connected!", ToolTipIcon.Info);
                 }));
@@ -146,11 +149,11 @@ namespace Spotify_Audio_Controller
             BrowserUtil.Open(request.ToUri());
         }
 
-        private (string id, string secret, string? refresh) GetCredentials()
+        private (string id, string secret, string? refresh) GetCredentials() // Get credentials from config file or prompt user if not found
         {
-            string path = ConfigPath;
+            string path = ConfigPath; // variable for file path
 
-            if (File.Exists(path))
+            if (File.Exists(path)) // If file exists, read it
             {
                 var lines = File.ReadAllLines(path);
                 if (lines.Length >= 2)
@@ -162,7 +165,6 @@ namespace Spotify_Audio_Controller
                 }
             }
 
-            // Only open browser and prompt once
             MessageBox.Show("First time setup! I'm opening the Spotify Developer Dashboard. Please copy your Client ID and Client Secret.", "Setup");
             BrowserUtil.Open(new Uri("https://developer.spotify.com/dashboard"));
 
@@ -187,36 +189,28 @@ namespace Spotify_Audio_Controller
             HotkeyManager.Current.AddOrReplace("VolDown", VolumeDownKey, VolumeDown);
         }
 
-        private async void VolumeUp(object sender, HotkeyEventArgs e)
+        private void VolumeUp(object sender, HotkeyEventArgs e)
         {
             if (Spotify == null) return;
-            try
-            {
-                CurrentVolume = Math.Min(100, CurrentVolume + VolumeChangeAmount);
-                await Spotify.Player.SetVolume(new PlayerVolumeRequest(CurrentVolume));
-                Log("Turned up volume to " + CurrentVolume);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Volume change failed: " + ex.Message);
-                Log("Volume up failed: " + ex.Message);
-            }
+
+            // 1. Instant local math
+            CurrentVolume = Math.Min(100, CurrentVolume + VolumeChangeAmount);
+            Log("User adjusted volume up to " + CurrentVolume);
+
+            // 2. Fire and forget the API request!
+            _ = SendVolumeUpdateAsync(CurrentVolume);
         }
 
-        private async void VolumeDown(object sender, HotkeyEventArgs e)
+        private void VolumeDown(object sender, HotkeyEventArgs e)
         {
             if (Spotify == null) return;
-            try
-            {
-                CurrentVolume = Math.Max(0, CurrentVolume - VolumeChangeAmount);
-                await Spotify.Player.SetVolume(new PlayerVolumeRequest(CurrentVolume));
-                Log("Turned down volume to " + CurrentVolume);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Volume change failed: " + ex.Message);
-                Log("Volume down failed: " + ex.Message);
-            }
+
+            // 1. Instant local math
+            CurrentVolume = Math.Max(0, CurrentVolume - VolumeChangeAmount);
+            Log("User adjusted volume down to " + CurrentVolume);
+
+            // 2. Fire and forget the API request!
+            _ = SendVolumeUpdateAsync(CurrentVolume);
         }
 
         private void exitToolStripMenuItem_Click(object sender, EventArgs e)
@@ -287,14 +281,32 @@ namespace Spotify_Audio_Controller
 
                 if (playback != null && playback.Device != null)
                 {
+                    // Update the local variable with the actual cloud value
                     CurrentVolume = playback.Device.VolumePercent ?? 50;
-                    Log("Synced volume with Spotify: " + CurrentVolume);
                 }
             }
             catch (Exception ex)
             {
-                CurrentVolume = 50;
-                Log("Failed to sync volume with Spotify: " + ex.Message);
+                Log("Sync failed: " + ex.Message);
+            }
+        }
+
+        private async void timer1_Tick(object sender, EventArgs e) // Added this so that IF the user decides to change volume manually in the spotify app then this will sync eventually. It runs on a timer that executes every 10000MS aka 10 seconds.
+        {
+            await SyncVolumeWithSpotify();
+            Log("Synced Audio With Spotify (Timer)");
+        }
+
+        private async Task SendVolumeUpdateAsync(int volume)
+        {
+            try
+            {
+                await Spotify.Player.SetVolume(new PlayerVolumeRequest(volume));
+            }
+            catch (Exception ex)
+            {
+                // This catches the error in the background so it doesn't crash your app
+                Log("Background volume update failed: " + ex.Message);
             }
         }
     }
