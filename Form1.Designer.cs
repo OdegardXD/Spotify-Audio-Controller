@@ -36,6 +36,7 @@
             changeVolumeUpKeybindToolStripMenuItem = new ToolStripMenuItem();
             changeVolumeDownKeybindToolStripMenuItem = new ToolStripMenuItem();
             timer1 = new System.Windows.Forms.Timer(components);
+            changeVolumeChangeIncrementalToolStripMenuItem = new ToolStripMenuItem();
             contextMenuStrip1.SuspendLayout();
             SuspendLayout();
             // 
@@ -50,9 +51,9 @@
             // 
             // contextMenuStrip1
             // 
-            contextMenuStrip1.Items.AddRange(new ToolStripItem[] { exitToolStripMenuItem, changeVolumeUpKeybindToolStripMenuItem, changeVolumeDownKeybindToolStripMenuItem });
+            contextMenuStrip1.Items.AddRange(new ToolStripItem[] { exitToolStripMenuItem, changeVolumeUpKeybindToolStripMenuItem, changeVolumeDownKeybindToolStripMenuItem, changeVolumeChangeIncrementalToolStripMenuItem });
             contextMenuStrip1.Name = "contextMenuStrip1";
-            contextMenuStrip1.Size = new Size(239, 70);
+            contextMenuStrip1.Size = new Size(239, 114);
             // 
             // exitToolStripMenuItem
             // 
@@ -81,6 +82,13 @@
             timer1.Interval = 10000;
             timer1.Tick += timer1_Tick;
             // 
+            // changeVolumeChangeIncrementalToolStripMenuItem
+            // 
+            changeVolumeChangeIncrementalToolStripMenuItem.Name = "changeVolumeChangeIncrementalToolStripMenuItem";
+            changeVolumeChangeIncrementalToolStripMenuItem.Size = new Size(238, 22);
+            changeVolumeChangeIncrementalToolStripMenuItem.Text = "Set Volume Step Size";
+            changeVolumeChangeIncrementalToolStripMenuItem.Click += changeVolumeChangeIncrementalToolStripMenuItem_Click;
+            // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
@@ -100,5 +108,6 @@
         private ToolStripMenuItem changeVolumeUpKeybindToolStripMenuItem;
         private ToolStripMenuItem changeVolumeDownKeybindToolStripMenuItem;
         private System.Windows.Forms.Timer timer1;
+        private ToolStripMenuItem changeVolumeChangeIncrementalToolStripMenuItem;
     }
 }

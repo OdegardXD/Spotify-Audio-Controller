@@ -15,7 +15,7 @@ Should look something like this:
 ## Logging and Config file     
 The app logs all actions for troubleshooting    
 The config folder contains app Secret and Client ID   
-Log and Config is placed in a folder named "AppData" in the same place where the executable is   
+Log and Config is placed in Appdata/Local/SpotifyAudioController   
    
 # Copyright   
 i dont care. do whatever you want with it. but if you copy this then please give me a shoutout on ur repo.   

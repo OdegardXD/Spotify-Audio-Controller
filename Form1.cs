@@ -2,6 +2,7 @@ using NHotkey;
 using NHotkey.WindowsForms;
 using SpotifyAPI.Web;
 using SpotifyAPI.Web.Auth;
+using Swan.Parsers;
 using System;
 using System.IO;
 using System.Threading.Tasks;
@@ -26,8 +27,11 @@ namespace Spotify_Audio_Controller
         private bool IsChangingKey = false;
         private bool IsUpKey = true;
 
-        // AppData folder and file paths
-        private static readonly string AppDataFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AppData");
+        // Path to C:\Users\<User>\AppData\Local\SpotifyAudioController
+        private static readonly string AppDataFolder = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "SpotifyAudioController"
+        );
         private static readonly string ConfigPath = Path.Combine(AppDataFolder, "config.txt");
         private static readonly string LogPath = Path.Combine(AppDataFolder, "log.txt");
 
@@ -82,7 +86,7 @@ namespace Spotify_Audio_Controller
                     {
                         if (lines.Length < 3 || lines[2] != token.RefreshToken)
                         {
-                            File.WriteAllLines(ConfigPath, new[] { clientId, clientSecret, token.RefreshToken });
+                            SaveConfig(clientId, clientSecret, token.RefreshToken, VolumeChangeAmount, VolumeUpKey, VolumeDownKey);
                             Log("Refresh token updated (silent login).");
                         }
                     }
@@ -113,7 +117,7 @@ namespace Spotify_Audio_Controller
                     new AuthorizationCodeTokenRequest(clientId, clientSecret, response.Code, new Uri("http://127.0.0.1:5000/callback"))
                 );
 
-                File.WriteAllLines(ConfigPath, new[] { clientId, clientSecret, tokenResponse.RefreshToken });
+                SaveConfig(clientId, clientSecret, tokenResponse.RefreshToken, VolumeChangeAmount, VolumeUpKey, VolumeDownKey);
                 Log("Refresh token saved (first login).");
 
                 var authenticator = new AuthorizationCodeAuthenticator(clientId, clientSecret, tokenResponse);
@@ -125,7 +129,7 @@ namespace Spotify_Audio_Controller
                     {
                         if (lines.Length < 3 || lines[2] != token.RefreshToken)
                         {
-                            File.WriteAllLines(ConfigPath, new[] { clientId, clientSecret, token.RefreshToken });
+                            SaveConfig(clientId, clientSecret, token.RefreshToken, VolumeChangeAmount, VolumeUpKey, VolumeDownKey);
                             Log("Refresh token updated (browser login).");
                         }
                     }
@@ -149,23 +153,41 @@ namespace Spotify_Audio_Controller
             BrowserUtil.Open(request.ToUri());
         }
 
-        private (string id, string secret, string? refresh) GetCredentials() // Get credentials from config file or prompt user if not found
+        private (string id, string secret, string? refresh) GetCredentials()
         {
-            string path = ConfigPath; // variable for file path
-
-            if (File.Exists(path)) // If file exists, read it
+            if (File.Exists(ConfigPath))
             {
-                var lines = File.ReadAllLines(path);
-                if (lines.Length >= 2)
+                var lines = File.ReadAllLines(ConfigPath);
+                string id = "", secret = "", refresh = "";
+
+                foreach (var line in lines)
                 {
-                    string id = lines[0].Trim();
-                    string secret = lines[1].Trim();
-                    string? refresh = lines.Length >= 3 ? lines[2].Trim() : null;
-                    return (id, secret, refresh);
+                    if (line.StartsWith("ClientID:")) id = line.Replace("ClientID:", "").Trim();
+                    if (line.StartsWith("ClientSecret:")) secret = line.Replace("ClientSecret:", "").Trim();
+                    if (line.StartsWith("RefreshToken:")) refresh = line.Replace("RefreshToken:", "").Trim();
+                    if (line.StartsWith("VolumeIncrementSize:"))
+                    {
+                        if (int.TryParse(line.Replace("VolumeIncrementSize:", "").Trim(), out int val))
+                            VolumeChangeAmount = val;
+                    }
+                    if (line.StartsWith("VolumeUpKey:"))
+                    {
+                        if (Enum.TryParse(line.Replace("VolumeUpKey:", "").Trim(), out Keys key))
+                            VolumeUpKey = key;
+                    }
+                    if (line.StartsWith("VolumeDownKey:"))
+                    {
+                        if (Enum.TryParse(line.Replace("VolumeDownKey:", "").Trim(), out Keys key))
+                            VolumeDownKey = key;
+                    }
                 }
+
+                if (!string.IsNullOrEmpty(id) && !string.IsNullOrEmpty(secret))
+                    return (id, secret, string.IsNullOrEmpty(refresh) ? null : refresh);
             }
 
-            MessageBox.Show("First time setup! I'm opening the Spotify Developer Dashboard. Please copy your Client ID and Client Secret.", "Setup");
+            // --- First Time Setup Logic ---
+            MessageBox.Show("First time setup! I'm opening the Spotify Developer Dashboard.", "Setup");
             BrowserUtil.Open(new Uri("https://developer.spotify.com/dashboard"));
 
             string idInput = Microsoft.VisualBasic.Interaction.InputBox("Enter Client ID:", "Setup", "");
@@ -173,14 +195,26 @@ namespace Spotify_Audio_Controller
 
             if (string.IsNullOrWhiteSpace(idInput) || string.IsNullOrWhiteSpace(secretInput))
             {
-                MessageBox.Show("Credentials required. Closing.", "Error");
-                Log("App closed: No credentials provided.");
                 Environment.Exit(0);
             }
 
-            File.WriteAllLines(path, new[] { idInput, secretInput });
-            Log("Saved new Spotify Client ID and Secret.");
+            // Save using our new method
+            SaveConfig(idInput, secretInput, null, VolumeChangeAmount, VolumeUpKey, VolumeDownKey);
             return (idInput, secretInput, null);
+        }
+
+        private void SaveConfig(string clientId, string clientSecret, string? refresh, int step, Keys upKey, Keys downKey)
+        {
+            string[] lines = {
+                $"ClientID: {clientId}",
+                $"ClientSecret: {clientSecret}",
+                $"RefreshToken: {refresh ?? ""}",
+                $"VolumeIncrementSize: {step}",
+                $"VolumeUpKey: {upKey}",
+                $"VolumeDownKey: {downKey}"
+            };
+            File.WriteAllLines(ConfigPath, lines);
+            Log("Config file saved with current settings.");
         }
 
         private void RegisterHotkeys()
@@ -243,6 +277,7 @@ namespace Spotify_Audio_Controller
         {
             if (IsChangingKey)
             {
+                // Ignore modifier-only presses
                 if (e.KeyCode == Keys.ControlKey || e.KeyCode == Keys.ShiftKey || e.KeyCode == Keys.Menu)
                 {
                     return;
@@ -261,6 +296,10 @@ namespace Spotify_Audio_Controller
                     Log("Changed volume down keybind to " + e.KeyData);
                 }
 
+                // --- SAVE THE NEW KEYBINDS HERE ---
+                var (cid, csec, cref) = GetCredentials();
+                SaveConfig(cid, csec, cref, VolumeChangeAmount, VolumeUpKey, VolumeDownKey);
+
                 IsChangingKey = false;
                 RegisterHotkeys();
 
@@ -268,6 +307,7 @@ namespace Spotify_Audio_Controller
                 notifyIcon1.ShowBalloonTip(2000, "Keybind Updated", $"New combo: {e.KeyData}", ToolTipIcon.Info);
                 return;
             }
+
             base.OnKeyDown(e);
         }
 
@@ -307,6 +347,22 @@ namespace Spotify_Audio_Controller
             {
                 // This catches the error in the background so it doesn't crash your app
                 Log("Background volume update failed: " + ex.Message);
+            }
+        }
+
+        private void changeVolumeChangeIncrementalToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            string volumeStepSizeInput = Microsoft.VisualBasic.Interaction.InputBox("Enter Volume Step Size. Current is " + VolumeChangeAmount, "Change Volume Step Size", "");
+            if (int.TryParse(volumeStepSizeInput, out int result))
+            {
+                result = Math.Clamp(result, 1, 100); // clamp it
+                VolumeChangeAmount = result; // change the global variable used everywhere
+
+                var (id, secret, refresh) = GetCredentials();
+                SaveConfig(id, secret, refresh, VolumeChangeAmount, VolumeUpKey, VolumeDownKey); // save it to config
+
+                Log($"Volume step size changed to: {VolumeChangeAmount}");
+                notifyIcon1.ShowBalloonTip(2000, "Update Success", $"Steps set to {VolumeChangeAmount}", ToolTipIcon.Info);
             }
         }
     }
