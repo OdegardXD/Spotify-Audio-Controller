@@ -1,6 +1,6 @@
 # Spotify Audio Controller
 
-A tray app that lets you control Spotify volume with global hotkeys using the Spotify Web API.
+A tray app that lets you control Spotify volume with global hotkeys using the Spotify Web API
 
 ## Features
 - Global hotkeys to raise/lower Spotify volume
