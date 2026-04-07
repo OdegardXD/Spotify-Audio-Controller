@@ -356,9 +356,10 @@ namespace Spotify_Audio_Controller
             if (int.TryParse(volumeStepSizeInput, out int result))
             {
                 result = Math.Clamp(result, 1, 100); // clamp it
-                VolumeChangeAmount = result; // change the global variable used everywhere
 
-                var (id, secret, refresh) = GetCredentials();
+                var (id, secret, refresh) = GetCredentials(); // read config before updating the value
+                VolumeChangeAmount = result; // set after GetCredentials so it doesn't get overwritten
+
                 SaveConfig(id, secret, refresh, VolumeChangeAmount, VolumeUpKey, VolumeDownKey); // save it to config
 
                 Log($"Volume step size changed to: {VolumeChangeAmount}");
