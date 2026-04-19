@@ -1,32 +1,19 @@
 # Spotify Audio Controller
 
-A tray app that lets you control Spotify volume with global hotkeys using the Spotify Web API
+A tray app that lets you control Spotify volume and skip songs with global hotkeys, using native Windows APIs. No premium or developer account required!
 
 ## Features
-- Global hotkeys to raise/lower Spotify volume
+- Global hotkeys to raise/lower Spotify volume directly via the Windows Volume Mixer
+- Global hotkeys to skip to the next or previous song
 - Runs quietly in the system tray
 - Config + log files stored in your local AppData folder
 
 ## Requirements
-- A Spotify account
-- A Spotify Developer app with Web API access
-- Redirect URI set to `http://127.0.0.1:5000/callback`
+- A Windows PC
+- Spotify desktop application running
 
-## Setup
-1. Open the Spotify Developer Dashboard: https://developer.spotify.com/dashboard  
-2. Create a new app.
-3. Add the Redirect URI: `http://127.0.0.1:5000/callback`
-4. Make sure **API Used** includes **Web API**.
-
-Example setup screenshot:  
-<img width="1429" height="731" alt="image" src="https://github.com/user-attachments/assets/fb717c15-1eb2-42d3-847d-e3da3eb50c3d" />
-
-## First Run
-On first launch, the app will open the Spotify Developer Dashboard and prompt for:
-- Client ID
-- Client Secret
-
-These are saved locally for future use.
+## Setup & Run
+Simply download the executable and run it! There is no setup, authentication, or login required.
 
 ## Configuration & Logs
 All app data is stored here:
@@ -34,7 +21,7 @@ All app data is stored here:
 `%LOCALAPPDATA%\SpotifyAudioController`
 
 Files:
-- `config.txt` — Stores Client ID/Secret, refresh token, volume step size, and keybinds
+- `config.txt` — Stores your configured volume step size and keybinds
 - `log.txt` — Runtime logging for troubleshooting
 
 ## Notes
