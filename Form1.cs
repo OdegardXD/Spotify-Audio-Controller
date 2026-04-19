@@ -1,10 +1,10 @@
+using NAudio.CoreAudioApi;
 using NHotkey;
 using NHotkey.WindowsForms;
-using SpotifyAPI.Web;
-using SpotifyAPI.Web.Auth;
-using Swan.Parsers;
 using System;
+using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -12,13 +12,7 @@ namespace Spotify_Audio_Controller
 {
     public partial class Form1 : Form
     {
-        // Authentication Related
-        private SpotifyClient Spotify;
-        string ClientID;
-        private static EmbedIOAuthServer AuthServer;
-
         // Volume Related
-        private int CurrentVolume;
         private int VolumeChangeAmount = 5;
         private Keys VolumeUpKey = Keys.Control | Keys.Up;
         private Keys VolumeDownKey = Keys.Control | Keys.Down;
@@ -40,14 +34,22 @@ namespace Spotify_Audio_Controller
         private static readonly string ConfigPath = Path.Combine(AppDataFolder, "config.txt");
         private static readonly string LogPath = Path.Combine(AppDataFolder, "log.txt");
 
+        // Windows API for media keys
+        public const int KEYEVENTF_EXTENDEDKEY = 0x0001;
+        public const int KEYEVENTF_KEYUP = 0x0002;
+        public const int VK_MEDIA_NEXT_TRACK = 0xB0;
+        public const int VK_MEDIA_PREV_TRACK = 0xB1;
+
+        [DllImport("user32.dll")]
+        public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, int dwExtraInfo);
+
         // Static constructor to ensure folder and log file are ready
         static Form1()
         {
-            Directory.CreateDirectory(AppDataFolder); // Create the folder for storing config and log file
-            File.WriteAllText(LogPath, ""); // Overwrite log file on each startup
+            Directory.CreateDirectory(AppDataFolder);
+            File.WriteAllText(LogPath, "");
         }
 
-        // Logging method
         public static void Log(string message)
         {
             string line = $"[{DateTime.Now:dd-MM-yyyy HH:mm:ss}] {message}{Environment.NewLine}";
@@ -59,117 +61,28 @@ namespace Spotify_Audio_Controller
             InitializeComponent();
             Log("Started app...");
 
-            this.KeyPreview = true; // Some stuff to hide the main useless window
-            this.ShowInTaskbar = false; // Some more stuff to hide the main useless window
-            this.WindowState = FormWindowState.Minimized; // Even more stuff to hide the main useless window
+            this.KeyPreview = true;
+            this.ShowInTaskbar = false;
+            this.WindowState = FormWindowState.Minimized;
 
-            Task.Run(async () => await StartAuthentication()); // Start authentication on a different thread
+            LoadConfig();
+            RegisterHotkeys();
+            notifyIcon1.ShowBalloonTip(3000, "Spotify Controller", "Ready and running!", ToolTipIcon.Info);
         }
 
-        protected override void OnLoad(EventArgs e) // If user tries to load window (which shoudlnt be possible)
+        protected override void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
-            this.Hide(); // Hide the main window if it somehow appears
+            this.Hide();
         }
 
-        private async Task StartAuthentication()
-        {
-            var (clientId, clientSecret, refreshToken) = GetCredentials();
-            this.ClientID = clientId;
-
-            // --- CASE A: We already have a Refresh Token (Silent Login) ---
-            if (!string.IsNullOrEmpty(refreshToken))
-            {
-                var authenticator = new AuthorizationCodeAuthenticator(clientId, clientSecret,
-                    new AuthorizationCodeTokenResponse { RefreshToken = refreshToken });
-
-                // Subscribe to token refreshed event to update config.txt
-                authenticator.TokenRefreshed += (sender, token) =>
-                {
-                    var lines = File.ReadAllLines(ConfigPath);
-                    if (lines.Length >= 2)
-                    {
-                        if (lines.Length < 3 || lines[2] != token.RefreshToken)
-                        {
-                            SaveConfig(clientId, clientSecret, token.RefreshToken, VolumeChangeAmount, VolumeUpKey, VolumeDownKey, SkipNextKey, SkipPrevKey);
-                            Log("Refresh token updated (silent login).");
-                        }
-                    }
-                };
-
-                var config = SpotifyClientConfig.CreateDefault().WithAuthenticator(authenticator);
-                Spotify = new SpotifyClient(config);
-
-                await SyncVolumeWithSpotify();
-                this.Invoke(new Action(() =>
-                {
-                    RegisterHotkeys();
-                    notifyIcon1.ShowBalloonTip(3000, "Spotify Controller", "Ready (Auto-Refreshed)", ToolTipIcon.Info);
-                }));
-                Log("Silent login successful.");
-                return;
-            }
-
-            // --- CASE B: First time login (Browser Login) ---
-            AuthServer = new EmbedIOAuthServer(new Uri("http://127.0.0.1:5000/callback"), 5000);
-            await AuthServer.Start();
-
-            AuthServer.AuthorizationCodeReceived += async (sender, response) =>
-            {
-                await AuthServer.Stop();
-                var config = SpotifyClientConfig.CreateDefault();
-                var tokenResponse = await new OAuthClient(config).RequestToken(
-                    new AuthorizationCodeTokenRequest(clientId, clientSecret, response.Code, new Uri("http://127.0.0.1:5000/callback"))
-                );
-
-                SaveConfig(clientId, clientSecret, tokenResponse.RefreshToken, VolumeChangeAmount, VolumeUpKey, VolumeDownKey, SkipNextKey, SkipPrevKey);
-                Log("Refresh token saved (first login).");
-
-                var authenticator = new AuthorizationCodeAuthenticator(clientId, clientSecret, tokenResponse);
-
-                authenticator.TokenRefreshed += (s, token) =>
-                {
-                    var lines = File.ReadAllLines(ConfigPath);
-                    if (lines.Length >= 2)
-                    {
-                        if (lines.Length < 3 || lines[2] != token.RefreshToken)
-                        {
-                            SaveConfig(clientId, clientSecret, token.RefreshToken, VolumeChangeAmount, VolumeUpKey, VolumeDownKey, SkipNextKey, SkipPrevKey);
-                            Log("Refresh token updated (browser login).");
-                        }
-                    }
-                };
-
-                Spotify = new SpotifyClient(SpotifyClientConfig.CreateDefault().WithAuthenticator(authenticator));
-
-                await SyncVolumeWithSpotify();
-                this.Invoke(new Action(() =>
-                {
-                    RegisterHotkeys();
-                    notifyIcon1.ShowBalloonTip(3000, "Spotify Controller", "Connected!", ToolTipIcon.Info);
-                }));
-                Log("First time login successful.");
-            };
-
-            var request = new LoginRequest(AuthServer.BaseUri, clientId, LoginRequest.ResponseType.Code)
-            {
-                Scope = new[] { Scopes.UserModifyPlaybackState, Scopes.UserReadPlaybackState }
-            };
-            BrowserUtil.Open(request.ToUri());
-        }
-
-        private (string id, string secret, string? refresh) GetCredentials()
+        private void LoadConfig()
         {
             if (File.Exists(ConfigPath))
             {
                 var lines = File.ReadAllLines(ConfigPath);
-                string id = "", secret = "", refresh = "";
-
                 foreach (var line in lines)
                 {
-                    if (line.StartsWith("ClientID:")) id = line.Replace("ClientID:", "").Trim();
-                    if (line.StartsWith("ClientSecret:")) secret = line.Replace("ClientSecret:", "").Trim();
-                    if (line.StartsWith("RefreshToken:")) refresh = line.Replace("RefreshToken:", "").Trim();
                     if (line.StartsWith("VolumeIncrementSize:"))
                     {
                         if (int.TryParse(line.Replace("VolumeIncrementSize:", "").Trim(), out int val))
@@ -185,40 +98,33 @@ namespace Spotify_Audio_Controller
                         if (Enum.TryParse(line.Replace("VolumeDownKey:", "").Trim(), out Keys key))
                             VolumeDownKey = key;
                     }
+                    if (line.StartsWith("SkipNextKey:"))
+                    {
+                        if (Enum.TryParse(line.Replace("SkipNextKey:", "").Trim(), out Keys key))
+                            SkipNextKey = key;
+                    }
+                    if (line.StartsWith("SkipPrevKey:"))
+                    {
+                        if (Enum.TryParse(line.Replace("SkipPrevKey:", "").Trim(), out Keys key))
+                            SkipPrevKey = key;
+                    }
                 }
-
-                if (!string.IsNullOrEmpty(id) && !string.IsNullOrEmpty(secret))
-                    return (id, secret, string.IsNullOrEmpty(refresh) ? null : refresh);
             }
-
-            // --- First Time Setup Logic ---
-            MessageBox.Show("First time setup! I'm opening the Spotify Developer Dashboard.", "Setup");
-            BrowserUtil.Open(new Uri("https://developer.spotify.com/dashboard"));
-
-            string idInput = Microsoft.VisualBasic.Interaction.InputBox("Enter Client ID:", "Setup", "");
-            string secretInput = Microsoft.VisualBasic.Interaction.InputBox("Enter Client Secret:", "Setup", "");
-
-            if (string.IsNullOrWhiteSpace(idInput) || string.IsNullOrWhiteSpace(secretInput))
+            else
             {
-                Environment.Exit(0);
+                // Create default config if it doesn't exist
+                SaveConfig();
             }
-
-            // Save using our new method
-            SaveConfig(idInput, secretInput, null, VolumeChangeAmount, VolumeUpKey, VolumeDownKey, SkipNextKey, SkipPrevKey);
-            return (idInput, secretInput, null);
         }
 
-        private void SaveConfig(string clientId, string clientSecret, string? refresh, int step, Keys upKey, Keys downKey, Keys nextKey, Keys prevKey)
+        private void SaveConfig()
         {
             string[] lines = {
-                $"ClientID: {clientId}",
-                $"ClientSecret: {clientSecret}",
-                $"RefreshToken: {refresh ?? ""}",
-                $"VolumeIncrementSize: {step}",
-                $"VolumeUpKey: {upKey}",
-                $"VolumeDownKey: {downKey}",
-                $"SkipNextKey: {nextKey}",
-                $"SkipPrevKey: {prevKey}"
+                $"VolumeIncrementSize: {VolumeChangeAmount}",
+                $"VolumeUpKey: {VolumeUpKey}",
+                $"VolumeDownKey: {VolumeDownKey}",
+                $"SkipNextKey: {SkipNextKey}",
+                $"SkipPrevKey: {SkipPrevKey}"
             };
             File.WriteAllLines(ConfigPath, lines);
             Log("Config file saved with current settings.");
@@ -242,52 +148,76 @@ namespace Spotify_Audio_Controller
             HotkeyManager.Current.AddOrReplace("SkipPrev", SkipPrevKey, SkipPrev);
         }
 
+        private void AdjustSpotifyVolume(float amount)
+        {
+            try
+            {
+                using var enumerator = new MMDeviceEnumerator();
+                using var defaultDevice = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+                var sessionManager = defaultDevice.AudioSessionManager;
+                var sessions = sessionManager.Sessions;
+
+                bool spotifyFound = false;
+
+                for (int i = 0; i < sessions.Count; i++)
+                {
+                    using var session = sessions[i];
+                    if (session.GetProcessID != 0)
+                    {
+                        try
+                        {
+                            var process = Process.GetProcessById((int)session.GetProcessID);
+                            if (process.ProcessName.Equals("Spotify", StringComparison.OrdinalIgnoreCase))
+                            {
+                                spotifyFound = true;
+                                var volumeControl = session.SimpleAudioVolume;
+                                float currentVol = volumeControl.Volume;
+                                float newVol = currentVol + amount;
+                                newVol = Math.Clamp(newVol, 0.0f, 1.0f);
+                                volumeControl.Volume = newVol;
+                                Log($"Adjusted Spotify volume to {Math.Round(newVol * 100)}%");
+                            }
+                        }
+                        catch
+                        {
+                            // Ignore processes that might have exited
+                        }
+                    }
+                }
+
+                if (!spotifyFound)
+                {
+                    Log("Spotify process not found in audio sessions. Ensure Spotify is playing audio.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("Failed to adjust Spotify volume: " + ex.Message);
+            }
+        }
+
         private void VolumeUp(object sender, HotkeyEventArgs e)
         {
-            if (Spotify == null) return;
-
-            // 1. Instant local math
-            CurrentVolume = Math.Min(100, CurrentVolume + VolumeChangeAmount);
-            Log("User adjusted volume up to " + CurrentVolume);
-
-            // 2. Fire and forget the API request!
-            _ = SendVolumeUpdateAsync(CurrentVolume);
+            AdjustSpotifyVolume(VolumeChangeAmount / 100f);
         }
 
         private void VolumeDown(object sender, HotkeyEventArgs e)
         {
-            if (Spotify == null) return;
-
-            // 1. Instant local math
-            CurrentVolume = Math.Max(0, CurrentVolume - VolumeChangeAmount);
-            Log("User adjusted volume down to " + CurrentVolume);
-
-            // 2. Fire and forget the API request!
-            _ = SendVolumeUpdateAsync(CurrentVolume);
-        }
-
-        private async Task SkipNextAsync()
-        {
-            try { await Spotify.Player.SkipNext(); Log("Skipped to next song."); }
-            catch (Exception ex) { Log("Skip next failed: " + ex.Message); }
-        }
-
-        private async Task SkipPrevAsync()
-        {
-            try { await Spotify.Player.SkipPrevious(); Log("Skipped to previous song."); }
-            catch (Exception ex) { Log("Skip prev failed: " + ex.Message); }
+            AdjustSpotifyVolume(-VolumeChangeAmount / 100f);
         }
 
         private void SkipNext(object sender, HotkeyEventArgs e)
         {
-            if (Spotify == null) return;
-            _ = SkipNextAsync();
+            keybd_event(VK_MEDIA_NEXT_TRACK, 0, KEYEVENTF_EXTENDEDKEY, 0);
+            keybd_event(VK_MEDIA_NEXT_TRACK, 0, KEYEVENTF_KEYUP, 0);
+            Log("Skipped to next song via media key.");
         }
 
         private void SkipPrev(object sender, HotkeyEventArgs e)
         {
-            if (Spotify == null) return;
-            _ = SkipPrevAsync();
+            keybd_event(VK_MEDIA_PREV_TRACK, 0, KEYEVENTF_EXTENDEDKEY, 0);
+            keybd_event(VK_MEDIA_PREV_TRACK, 0, KEYEVENTF_KEYUP, 0);
+            Log("Skipped to previous song via media key.");
         }
 
         private void exitToolStripMenuItem_Click(object sender, EventArgs e)
@@ -369,9 +299,7 @@ namespace Spotify_Audio_Controller
                     Log("Changed skip prev keybind to " + e.KeyData);
                 }
 
-                // --- SAVE THE NEW KEYBINDS HERE ---
-                var (cid, csec, cref) = GetCredentials();
-                SaveConfig(cid, csec, cref, VolumeChangeAmount, VolumeUpKey, VolumeDownKey, SkipNextKey, SkipPrevKey);
+                SaveConfig();
 
                 IsChangingKey = false;
                 CurrentKeyBind = KeyBindType.None;
@@ -385,57 +313,15 @@ namespace Spotify_Audio_Controller
             base.OnKeyDown(e);
         }
 
-        private async Task SyncVolumeWithSpotify()
-        {
-            if (Spotify == null) return;
-
-            try
-            {
-                var playback = await Spotify.Player.GetCurrentPlayback();
-
-                if (playback != null && playback.Device != null)
-                {
-                    // Update the local variable with the actual cloud value
-                    CurrentVolume = playback.Device.VolumePercent ?? 50;
-                }
-            }
-            catch (Exception ex)
-            {
-                Log("Sync failed: " + ex.Message);
-            }
-        }
-
-        private async void timer1_Tick(object sender, EventArgs e) // Added this so that IF the user decides to change volume manually in the spotify app then this will sync eventually. It runs on a timer that executes every 10000MS aka 10 seconds.
-        {
-            await SyncVolumeWithSpotify();
-            Log("Synced Audio With Spotify (Timer)");
-        }
-
-        private async Task SendVolumeUpdateAsync(int volume)
-        {
-            try
-            {
-                await Spotify.Player.SetVolume(new PlayerVolumeRequest(volume));
-            }
-            catch (Exception ex)
-            {
-                // This catches the error in the background so it doesn't crash your app
-                Log("Background volume update failed: " + ex.Message);
-            }
-        }
-
         private void changeVolumeChangeIncrementalToolStripMenuItem_Click(object sender, EventArgs e)
         {
             string volumeStepSizeInput = Microsoft.VisualBasic.Interaction.InputBox("Enter Volume Step Size. Current is " + VolumeChangeAmount, "Change Volume Step Size", "");
             if (int.TryParse(volumeStepSizeInput, out int result))
             {
-                result = Math.Clamp(result, 1, 100); // clamp it
+                result = Math.Clamp(result, 1, 100);
+                VolumeChangeAmount = result;
 
-                var (id, secret, refresh) = GetCredentials(); // read config before updating the value
-                VolumeChangeAmount = result; // set after GetCredentials so it doesn't get overwritten
-
-                SaveConfig(id, secret, refresh, VolumeChangeAmount, VolumeUpKey, VolumeDownKey, SkipNextKey, SkipPrevKey); // save it to config
-
+                SaveConfig();
                 UpdateContextMenuText();
                 Log($"Volume step size changed to: {VolumeChangeAmount}");
                 notifyIcon1.ShowBalloonTip(2000, "Update Success", $"Steps set to {VolumeChangeAmount}", ToolTipIcon.Info);

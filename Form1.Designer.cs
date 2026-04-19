@@ -35,7 +35,7 @@ namespace Spotify_Audio_Controller
             exitToolStripMenuItem = new ToolStripMenuItem();
             changeVolumeUpKeybindToolStripMenuItem = new ToolStripMenuItem();
             changeVolumeDownKeybindToolStripMenuItem = new ToolStripMenuItem();
-            timer1 = new System.Windows.Forms.Timer(components);
+
             changeVolumeChangeIncrementalToolStripMenuItem = new ToolStripMenuItem();
             changeSkipNextKeybindToolStripMenuItem = new ToolStripMenuItem();
             changeSkipPrevKeybindToolStripMenuItem = new ToolStripMenuItem();
@@ -91,12 +91,7 @@ namespace Spotify_Audio_Controller
             changeSkipPrevKeybindToolStripMenuItem.Size = new Size(238, 22);
             changeSkipPrevKeybindToolStripMenuItem.Text = "Change Previous Song Keybind";
             changeSkipPrevKeybindToolStripMenuItem.Click += changeSkipPrevKeybindToolStripMenuItem_Click;
-            // 
-            // timer1
-            // 
-            timer1.Enabled = true;
-            timer1.Interval = 10000;
-            timer1.Tick += timer1_Tick;
+
             // 
             // changeVolumeChangeIncrementalToolStripMenuItem
             // 
@@ -123,7 +118,7 @@ namespace Spotify_Audio_Controller
         private ToolStripMenuItem exitToolStripMenuItem;
         private ToolStripMenuItem changeVolumeUpKeybindToolStripMenuItem;
         private ToolStripMenuItem changeVolumeDownKeybindToolStripMenuItem;
-        private System.Windows.Forms.Timer timer1;
+
         private ToolStripMenuItem changeVolumeChangeIncrementalToolStripMenuItem;
         private ToolStripMenuItem changeSkipNextKeybindToolStripMenuItem;
         private ToolStripMenuItem changeSkipPrevKeybindToolStripMenuItem;
