@@ -87,9 +87,9 @@ namespace Spotify_Audio_Controller
                 authenticator.TokenRefreshed += (sender, token) =>
                 {
                     var lines = File.ReadAllLines(ConfigPath);
-                    if (lines.Length >= 2)
+                    if (lines.Length >= 3)
                     {
-                        if (lines.Length < 3 || lines[2] != token.RefreshToken)
+                        if (lines.Length < 4 || lines[3] != "RefreshToken: " + token.RefreshToken)
                         {
                             SaveConfig(clientId, clientSecret, token.RefreshToken, VolumeChangeAmount, VolumeUpKey, VolumeDownKey, SkipNextKey, SkipPrevKey);
                             Log("Refresh token updated (silent login).");
@@ -130,9 +130,9 @@ namespace Spotify_Audio_Controller
                 authenticator.TokenRefreshed += (s, token) =>
                 {
                     var lines = File.ReadAllLines(ConfigPath);
-                    if (lines.Length >= 2)
+                    if (lines.Length >= 3)
                     {
-                        if (lines.Length < 3 || lines[2] != token.RefreshToken)
+                        if (lines.Length < 4 || lines[3] != "RefreshToken: " + token.RefreshToken)
                         {
                             SaveConfig(clientId, clientSecret, token.RefreshToken, VolumeChangeAmount, VolumeUpKey, VolumeDownKey, SkipNextKey, SkipPrevKey);
                             Log("Refresh token updated (browser login).");
@@ -163,10 +163,11 @@ namespace Spotify_Audio_Controller
             if (File.Exists(ConfigPath))
             {
                 var lines = File.ReadAllLines(ConfigPath);
-                string id = "", secret = "", refresh = "";
+                string id = "", secret = "", refresh = "", version = "";
 
                 foreach (var line in lines)
                 {
+                    if (line.StartsWith("Version:")) version = line.Replace("Version:", "").Trim();
                     if (line.StartsWith("ClientID:")) id = line.Replace("ClientID:", "").Trim();
                     if (line.StartsWith("ClientSecret:")) secret = line.Replace("ClientSecret:", "").Trim();
                     if (line.StartsWith("RefreshToken:")) refresh = line.Replace("RefreshToken:", "").Trim();
@@ -187,8 +188,15 @@ namespace Spotify_Audio_Controller
                     }
                 }
 
-                if (!string.IsNullOrEmpty(id) && !string.IsNullOrEmpty(secret))
+                if (version != "API")
+                {
+                    Log("Config version mismatch or missing. Wiping config.");
+                    File.Delete(ConfigPath);
+                }
+                else if (!string.IsNullOrEmpty(id) && !string.IsNullOrEmpty(secret))
+                {
                     return (id, secret, string.IsNullOrEmpty(refresh) ? null : refresh);
+                }
             }
 
             // --- First Time Setup Logic ---
@@ -211,6 +219,7 @@ namespace Spotify_Audio_Controller
         private void SaveConfig(string clientId, string clientSecret, string? refresh, int step, Keys upKey, Keys downKey, Keys nextKey, Keys prevKey)
         {
             string[] lines = {
+                "Version: API",
                 $"ClientID: {clientId}",
                 $"ClientSecret: {clientSecret}",
                 $"RefreshToken: {refresh ?? ""}",
@@ -221,7 +230,7 @@ namespace Spotify_Audio_Controller
                 $"SkipPrevKey: {prevKey}"
             };
             File.WriteAllLines(ConfigPath, lines);
-            Log("Config file saved with current settings.");
+            Log("Config file saved with current settings (Version: API).");
         }
 
         private void UpdateContextMenuText()
