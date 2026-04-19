@@ -39,7 +39,7 @@ Files:
 
 ## Notes
 - The app runs in the system tray.
-- You can change hotkeys and step size from the tray menu.
+- You can change hotkeys and step size from the tray menu (the current configured values are displayed in parentheses next to the menu options).
 
 ## Copyright
 I don’t care. Do whatever you want with it.  

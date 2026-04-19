@@ -23,9 +23,14 @@ namespace Spotify_Audio_Controller
         private Keys VolumeUpKey = Keys.Control | Keys.Up;
         private Keys VolumeDownKey = Keys.Control | Keys.Down;
 
+        // Skip Related
+        private Keys SkipNextKey = Keys.Control | Keys.Right;
+        private Keys SkipPrevKey = Keys.Control | Keys.Left;
+
         // Changing Keybind Related
         private bool IsChangingKey = false;
-        private bool IsUpKey = true;
+        private enum KeyBindType { None, VolumeUp, VolumeDown, SkipNext, SkipPrev }
+        private KeyBindType CurrentKeyBind = KeyBindType.None;
 
         // Path to C:\Users\<User>\AppData\Local\SpotifyAudioController
         private static readonly string AppDataFolder = Path.Combine(
@@ -86,7 +91,7 @@ namespace Spotify_Audio_Controller
                     {
                         if (lines.Length < 3 || lines[2] != token.RefreshToken)
                         {
-                            SaveConfig(clientId, clientSecret, token.RefreshToken, VolumeChangeAmount, VolumeUpKey, VolumeDownKey);
+                            SaveConfig(clientId, clientSecret, token.RefreshToken, VolumeChangeAmount, VolumeUpKey, VolumeDownKey, SkipNextKey, SkipPrevKey);
                             Log("Refresh token updated (silent login).");
                         }
                     }
@@ -117,7 +122,7 @@ namespace Spotify_Audio_Controller
                     new AuthorizationCodeTokenRequest(clientId, clientSecret, response.Code, new Uri("http://127.0.0.1:5000/callback"))
                 );
 
-                SaveConfig(clientId, clientSecret, tokenResponse.RefreshToken, VolumeChangeAmount, VolumeUpKey, VolumeDownKey);
+                SaveConfig(clientId, clientSecret, tokenResponse.RefreshToken, VolumeChangeAmount, VolumeUpKey, VolumeDownKey, SkipNextKey, SkipPrevKey);
                 Log("Refresh token saved (first login).");
 
                 var authenticator = new AuthorizationCodeAuthenticator(clientId, clientSecret, tokenResponse);
@@ -129,7 +134,7 @@ namespace Spotify_Audio_Controller
                     {
                         if (lines.Length < 3 || lines[2] != token.RefreshToken)
                         {
-                            SaveConfig(clientId, clientSecret, token.RefreshToken, VolumeChangeAmount, VolumeUpKey, VolumeDownKey);
+                            SaveConfig(clientId, clientSecret, token.RefreshToken, VolumeChangeAmount, VolumeUpKey, VolumeDownKey, SkipNextKey, SkipPrevKey);
                             Log("Refresh token updated (browser login).");
                         }
                     }
@@ -199,11 +204,11 @@ namespace Spotify_Audio_Controller
             }
 
             // Save using our new method
-            SaveConfig(idInput, secretInput, null, VolumeChangeAmount, VolumeUpKey, VolumeDownKey);
+            SaveConfig(idInput, secretInput, null, VolumeChangeAmount, VolumeUpKey, VolumeDownKey, SkipNextKey, SkipPrevKey);
             return (idInput, secretInput, null);
         }
 
-        private void SaveConfig(string clientId, string clientSecret, string? refresh, int step, Keys upKey, Keys downKey)
+        private void SaveConfig(string clientId, string clientSecret, string? refresh, int step, Keys upKey, Keys downKey, Keys nextKey, Keys prevKey)
         {
             string[] lines = {
                 $"ClientID: {clientId}",
@@ -211,16 +216,30 @@ namespace Spotify_Audio_Controller
                 $"RefreshToken: {refresh ?? ""}",
                 $"VolumeIncrementSize: {step}",
                 $"VolumeUpKey: {upKey}",
-                $"VolumeDownKey: {downKey}"
+                $"VolumeDownKey: {downKey}",
+                $"SkipNextKey: {nextKey}",
+                $"SkipPrevKey: {prevKey}"
             };
             File.WriteAllLines(ConfigPath, lines);
             Log("Config file saved with current settings.");
         }
 
+        private void UpdateContextMenuText()
+        {
+            changeVolumeUpKeybindToolStripMenuItem.Text = $"Change Volume Up Keybind ({VolumeUpKey})";
+            changeVolumeDownKeybindToolStripMenuItem.Text = $"Change Volume Down Keybind ({VolumeDownKey})";
+            changeSkipNextKeybindToolStripMenuItem.Text = $"Change Next Song Keybind ({SkipNextKey})";
+            changeSkipPrevKeybindToolStripMenuItem.Text = $"Change Previous Song Keybind ({SkipPrevKey})";
+            changeVolumeChangeIncrementalToolStripMenuItem.Text = $"Set Volume Step Size ({VolumeChangeAmount})";
+        }
+
         private void RegisterHotkeys()
         {
+            UpdateContextMenuText();
             HotkeyManager.Current.AddOrReplace("VolUp", VolumeUpKey, VolumeUp);
             HotkeyManager.Current.AddOrReplace("VolDown", VolumeDownKey, VolumeDown);
+            HotkeyManager.Current.AddOrReplace("SkipNext", SkipNextKey, SkipNext);
+            HotkeyManager.Current.AddOrReplace("SkipPrev", SkipPrevKey, SkipPrev);
         }
 
         private void VolumeUp(object sender, HotkeyEventArgs e)
@@ -247,6 +266,30 @@ namespace Spotify_Audio_Controller
             _ = SendVolumeUpdateAsync(CurrentVolume);
         }
 
+        private async Task SkipNextAsync()
+        {
+            try { await Spotify.Player.SkipNext(); Log("Skipped to next song."); }
+            catch (Exception ex) { Log("Skip next failed: " + ex.Message); }
+        }
+
+        private async Task SkipPrevAsync()
+        {
+            try { await Spotify.Player.SkipPrevious(); Log("Skipped to previous song."); }
+            catch (Exception ex) { Log("Skip prev failed: " + ex.Message); }
+        }
+
+        private void SkipNext(object sender, HotkeyEventArgs e)
+        {
+            if (Spotify == null) return;
+            _ = SkipNextAsync();
+        }
+
+        private void SkipPrev(object sender, HotkeyEventArgs e)
+        {
+            if (Spotify == null) return;
+            _ = SkipPrevAsync();
+        }
+
         private void exitToolStripMenuItem_Click(object sender, EventArgs e)
         {
             Log("App exited by user.");
@@ -256,7 +299,7 @@ namespace Spotify_Audio_Controller
         private void changeVolumeUpKeybindToolStripMenuItem_Click(object sender, EventArgs e)
         {
             IsChangingKey = true;
-            IsUpKey = true;
+            CurrentKeyBind = KeyBindType.VolumeUp;
             this.Show();
             this.Activate();
             notifyIcon1.ShowBalloonTip(3000, "Binder", "Press your new UP combo now...", ToolTipIcon.Info);
@@ -266,11 +309,31 @@ namespace Spotify_Audio_Controller
         private void changeVolumeDownKeybindToolStripMenuItem_Click(object sender, EventArgs e)
         {
             IsChangingKey = true;
-            IsUpKey = false;
+            CurrentKeyBind = KeyBindType.VolumeDown;
             this.Show();
             this.Activate();
             notifyIcon1.ShowBalloonTip(3000, "Binder", "Press your new DOWN combo now...", ToolTipIcon.Info);
             Log("User started changing volume down keybind.");
+        }
+
+        private void changeSkipNextKeybindToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            IsChangingKey = true;
+            CurrentKeyBind = KeyBindType.SkipNext;
+            this.Show();
+            this.Activate();
+            notifyIcon1.ShowBalloonTip(3000, "Binder", "Press your new SKIP NEXT combo now...", ToolTipIcon.Info);
+            Log("User started changing skip next keybind.");
+        }
+
+        private void changeSkipPrevKeybindToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            IsChangingKey = true;
+            CurrentKeyBind = KeyBindType.SkipPrev;
+            this.Show();
+            this.Activate();
+            notifyIcon1.ShowBalloonTip(3000, "Binder", "Press your new SKIP PREVIOUS combo now...", ToolTipIcon.Info);
+            Log("User started changing skip previous keybind.");
         }
 
         protected override void OnKeyDown(KeyEventArgs e)
@@ -285,22 +348,33 @@ namespace Spotify_Audio_Controller
 
                 e.SuppressKeyPress = true;
 
-                if (IsUpKey)
+                if (CurrentKeyBind == KeyBindType.VolumeUp)
                 {
                     VolumeUpKey = e.KeyData;
                     Log("Changed volume up keybind to " + e.KeyData);
                 }
-                else
+                else if (CurrentKeyBind == KeyBindType.VolumeDown)
                 {
                     VolumeDownKey = e.KeyData;
                     Log("Changed volume down keybind to " + e.KeyData);
                 }
+                else if (CurrentKeyBind == KeyBindType.SkipNext)
+                {
+                    SkipNextKey = e.KeyData;
+                    Log("Changed skip next keybind to " + e.KeyData);
+                }
+                else if (CurrentKeyBind == KeyBindType.SkipPrev)
+                {
+                    SkipPrevKey = e.KeyData;
+                    Log("Changed skip prev keybind to " + e.KeyData);
+                }
 
                 // --- SAVE THE NEW KEYBINDS HERE ---
                 var (cid, csec, cref) = GetCredentials();
-                SaveConfig(cid, csec, cref, VolumeChangeAmount, VolumeUpKey, VolumeDownKey);
+                SaveConfig(cid, csec, cref, VolumeChangeAmount, VolumeUpKey, VolumeDownKey, SkipNextKey, SkipPrevKey);
 
                 IsChangingKey = false;
+                CurrentKeyBind = KeyBindType.None;
                 RegisterHotkeys();
 
                 this.Hide();
@@ -360,8 +434,9 @@ namespace Spotify_Audio_Controller
                 var (id, secret, refresh) = GetCredentials(); // read config before updating the value
                 VolumeChangeAmount = result; // set after GetCredentials so it doesn't get overwritten
 
-                SaveConfig(id, secret, refresh, VolumeChangeAmount, VolumeUpKey, VolumeDownKey); // save it to config
+                SaveConfig(id, secret, refresh, VolumeChangeAmount, VolumeUpKey, VolumeDownKey, SkipNextKey, SkipPrevKey); // save it to config
 
+                UpdateContextMenuText();
                 Log($"Volume step size changed to: {VolumeChangeAmount}");
                 notifyIcon1.ShowBalloonTip(2000, "Update Success", $"Steps set to {VolumeChangeAmount}", ToolTipIcon.Info);
             }

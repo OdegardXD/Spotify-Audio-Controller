@@ -1,4 +1,4 @@
-﻿namespace Spotify_Audio_Controller
+namespace Spotify_Audio_Controller
 {
     partial class Form1
     {
@@ -37,6 +37,8 @@
             changeVolumeDownKeybindToolStripMenuItem = new ToolStripMenuItem();
             timer1 = new System.Windows.Forms.Timer(components);
             changeVolumeChangeIncrementalToolStripMenuItem = new ToolStripMenuItem();
+            changeSkipNextKeybindToolStripMenuItem = new ToolStripMenuItem();
+            changeSkipPrevKeybindToolStripMenuItem = new ToolStripMenuItem();
             contextMenuStrip1.SuspendLayout();
             SuspendLayout();
             // 
@@ -51,7 +53,7 @@
             // 
             // contextMenuStrip1
             // 
-            contextMenuStrip1.Items.AddRange(new ToolStripItem[] { exitToolStripMenuItem, changeVolumeUpKeybindToolStripMenuItem, changeVolumeDownKeybindToolStripMenuItem, changeVolumeChangeIncrementalToolStripMenuItem });
+            contextMenuStrip1.Items.AddRange(new ToolStripItem[] { exitToolStripMenuItem, changeVolumeUpKeybindToolStripMenuItem, changeVolumeDownKeybindToolStripMenuItem, changeSkipNextKeybindToolStripMenuItem, changeSkipPrevKeybindToolStripMenuItem, changeVolumeChangeIncrementalToolStripMenuItem });
             contextMenuStrip1.Name = "contextMenuStrip1";
             contextMenuStrip1.Size = new Size(239, 114);
             // 
@@ -75,6 +77,20 @@
             changeVolumeDownKeybindToolStripMenuItem.Size = new Size(238, 22);
             changeVolumeDownKeybindToolStripMenuItem.Text = "Change Volume Down Keybind";
             changeVolumeDownKeybindToolStripMenuItem.Click += changeVolumeDownKeybindToolStripMenuItem_Click;
+            // 
+            // changeSkipNextKeybindToolStripMenuItem
+            // 
+            changeSkipNextKeybindToolStripMenuItem.Name = "changeSkipNextKeybindToolStripMenuItem";
+            changeSkipNextKeybindToolStripMenuItem.Size = new Size(238, 22);
+            changeSkipNextKeybindToolStripMenuItem.Text = "Change Next Song Keybind";
+            changeSkipNextKeybindToolStripMenuItem.Click += changeSkipNextKeybindToolStripMenuItem_Click;
+            // 
+            // changeSkipPrevKeybindToolStripMenuItem
+            // 
+            changeSkipPrevKeybindToolStripMenuItem.Name = "changeSkipPrevKeybindToolStripMenuItem";
+            changeSkipPrevKeybindToolStripMenuItem.Size = new Size(238, 22);
+            changeSkipPrevKeybindToolStripMenuItem.Text = "Change Previous Song Keybind";
+            changeSkipPrevKeybindToolStripMenuItem.Click += changeSkipPrevKeybindToolStripMenuItem_Click;
             // 
             // timer1
             // 
@@ -109,5 +125,7 @@
         private ToolStripMenuItem changeVolumeDownKeybindToolStripMenuItem;
         private System.Windows.Forms.Timer timer1;
         private ToolStripMenuItem changeVolumeChangeIncrementalToolStripMenuItem;
+        private ToolStripMenuItem changeSkipNextKeybindToolStripMenuItem;
+        private ToolStripMenuItem changeSkipPrevKeybindToolStripMenuItem;
     }
 }
