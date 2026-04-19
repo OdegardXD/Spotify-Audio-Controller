@@ -4,7 +4,7 @@ A tray app that lets you control Spotify volume and skip tracks with global hotk
 
 The application now supports **Two Control Modes**:
 1. **API Mode**: Uses the official Spotify Web API to control playback and volume. (Requires Spotify Premium and a Spotify Developer app).
-2. **Windows Audio Mode**: Directly manipulates the Spotify process audio session locally and uses virtual media keys to control playback. (Does not require any Developer setup, works instantly).
+2. **Windows Audio Mode**: Changes Spotify's volume locally in Windows (similar to changing it in volume mixer) and uses virtual media keys to control playback. (Does not require any Developer setup, works instantly).
 
 ## Features
 - Selectable operating mode (API vs Local Windows Audio).

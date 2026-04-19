@@ -200,7 +200,7 @@ namespace Spotify_Audio_Controller
                 prompt.MaximizeBox = false;
                 prompt.MinimizeBox = false;
 
-                Label textLabel = new Label() { Left = 20, Top = 15, Width = 400, Height = 100, Text = "How do you want to control Spotify?\n\n- API Mode: Uses Spotify Web API (Requires Premium & Developer Setup).\n- Windows Audio Mode: Manipulates Spotify locally (No setup required, works instantly)." };
+                Label textLabel = new Label() { Left = 20, Top = 15, Width = 400, Height = 100, Text = "How do you want to control Spotify?\n\n- API Mode: Uses Spotify Web API (Requires Spotify Premium & Developer App Setup).\n- Windows Audio Mode: Changes Spotify's audio locally in Windows (No setup required, works instantly)." };
                 Button apiButton = new Button() { Text = "Mode: API", Left = 20, Width = 120, Top = 130 };
                 Button windowsAudioButton = new Button() { Text = "Mode: Windows Audio", Left = 150, Width = 140, Top = 130 };
                 Button cancelButton = new Button() { Text = "Quit", Left = 300, Width = 100, Top = 130 };
