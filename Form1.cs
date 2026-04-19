@@ -1,10 +1,13 @@
+using NAudio.CoreAudioApi;
 using NHotkey;
 using NHotkey.WindowsForms;
 using SpotifyAPI.Web;
 using SpotifyAPI.Web.Auth;
 using Swan.Parsers;
 using System;
+using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -26,6 +29,18 @@ namespace Spotify_Audio_Controller
         // Skip Related
         private Keys SkipNextKey = Keys.Control | Keys.Right;
         private Keys SkipPrevKey = Keys.Control | Keys.Left;
+
+        public enum AppMode { Unset, API, WindowsAudio }
+        private AppMode CurrentMode = AppMode.Unset;
+
+        // Windows API for media keys
+        public const int KEYEVENTF_EXTENDEDKEY = 0x0001;
+        public const int KEYEVENTF_KEYUP = 0x0002;
+        public const int VK_MEDIA_NEXT_TRACK = 0xB0;
+        public const int VK_MEDIA_PREV_TRACK = 0xB1;
+
+        [DllImport("user32.dll")]
+        public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, int dwExtraInfo);
 
         // Changing Keybind Related
         private bool IsChangingKey = false;
@@ -75,6 +90,18 @@ namespace Spotify_Audio_Controller
         private async Task StartAuthentication()
         {
             var (clientId, clientSecret, refreshToken) = GetCredentials();
+            
+            if (CurrentMode == AppMode.WindowsAudio)
+            {
+                this.Invoke(new Action(() =>
+                {
+                    RegisterHotkeys();
+                    notifyIcon1.ShowBalloonTip(3000, "Spotify Controller", "Ready (Windows Audio Mode)", ToolTipIcon.Info);
+                }));
+                Log("Started in Windows Audio Mode.");
+                return;
+            }
+
             this.ClientID = clientId;
 
             // --- CASE A: We already have a Refresh Token (Silent Login) ---
@@ -104,6 +131,7 @@ namespace Spotify_Audio_Controller
                 this.Invoke(new Action(() =>
                 {
                     RegisterHotkeys();
+                    timer1.Start();
                     notifyIcon1.ShowBalloonTip(3000, "Spotify Controller", "Ready (Auto-Refreshed)", ToolTipIcon.Info);
                 }));
                 Log("Silent login successful.");
@@ -146,6 +174,7 @@ namespace Spotify_Audio_Controller
                 this.Invoke(new Action(() =>
                 {
                     RegisterHotkeys();
+                    timer1.Start();
                     notifyIcon1.ShowBalloonTip(3000, "Spotify Controller", "Connected!", ToolTipIcon.Info);
                 }));
                 Log("First time login successful.");
@@ -158,16 +187,54 @@ namespace Spotify_Audio_Controller
             BrowserUtil.Open(request.ToUri());
         }
 
+        private AppMode PromptForMode()
+        {
+            AppMode selectedMode = AppMode.Unset;
+            using (Form prompt = new Form())
+            {
+                prompt.Width = 450;
+                prompt.Height = 220;
+                prompt.Text = "Select Application Mode";
+                prompt.StartPosition = FormStartPosition.CenterScreen;
+                prompt.FormBorderStyle = FormBorderStyle.FixedDialog;
+                prompt.MaximizeBox = false;
+                prompt.MinimizeBox = false;
+
+                Label textLabel = new Label() { Left = 20, Top = 15, Width = 400, Height = 100, Text = "How do you want to control Spotify?\n\n- API Mode: Uses Spotify Web API (Requires Premium & Developer Setup).\n- Windows Audio Mode: Manipulates Spotify locally (No setup required, works instantly)." };
+                Button apiButton = new Button() { Text = "Mode: API", Left = 20, Width = 120, Top = 130 };
+                Button windowsAudioButton = new Button() { Text = "Mode: Windows Audio", Left = 150, Width = 140, Top = 130 };
+                Button cancelButton = new Button() { Text = "Quit", Left = 300, Width = 100, Top = 130 };
+
+                apiButton.Click += (sender, e) => { selectedMode = AppMode.API; prompt.Close(); };
+                windowsAudioButton.Click += (sender, e) => { selectedMode = AppMode.WindowsAudio; prompt.Close(); };
+                cancelButton.Click += (sender, e) => { prompt.Close(); };
+
+                prompt.Controls.Add(textLabel);
+                prompt.Controls.Add(apiButton);
+                prompt.Controls.Add(windowsAudioButton);
+                prompt.Controls.Add(cancelButton);
+
+                prompt.ShowDialog();
+            }
+            
+            if (selectedMode == AppMode.Unset)
+            {
+                Environment.Exit(0);
+            }
+            return selectedMode;
+        }
+
         private (string id, string secret, string? refresh) GetCredentials()
         {
             if (File.Exists(ConfigPath))
             {
                 var lines = File.ReadAllLines(ConfigPath);
-                string id = "", secret = "", refresh = "", version = "";
+                string id = "", secret = "", refresh = "";
+                string modeStr = "";
 
                 foreach (var line in lines)
                 {
-                    if (line.StartsWith("Version:")) version = line.Replace("Version:", "").Trim();
+                    if (line.StartsWith("Mode:")) modeStr = line.Replace("Mode:", "").Trim();
                     if (line.StartsWith("ClientID:")) id = line.Replace("ClientID:", "").Trim();
                     if (line.StartsWith("ClientSecret:")) secret = line.Replace("ClientSecret:", "").Trim();
                     if (line.StartsWith("RefreshToken:")) refresh = line.Replace("RefreshToken:", "").Trim();
@@ -186,40 +253,75 @@ namespace Spotify_Audio_Controller
                         if (Enum.TryParse(line.Replace("VolumeDownKey:", "").Trim(), out Keys key))
                             VolumeDownKey = key;
                     }
+                    if (line.StartsWith("SkipNextKey:"))
+                    {
+                        if (Enum.TryParse(line.Replace("SkipNextKey:", "").Trim(), out Keys key))
+                            SkipNextKey = key;
+                    }
+                    if (line.StartsWith("SkipPrevKey:"))
+                    {
+                        if (Enum.TryParse(line.Replace("SkipPrevKey:", "").Trim(), out Keys key))
+                            SkipPrevKey = key;
+                    }
                 }
 
-                if (version != "API")
+                if (Enum.TryParse(modeStr, out AppMode parsedMode))
                 {
-                    Log("Config version mismatch or missing. Wiping config.");
+                    CurrentMode = parsedMode;
+                }
+
+                if (CurrentMode == AppMode.Unset)
+                {
+                    Log("Config mode mismatch or missing. Wiping config.");
                     File.Delete(ConfigPath);
                 }
-                else if (!string.IsNullOrEmpty(id) && !string.IsNullOrEmpty(secret))
+                else
                 {
-                    return (id, secret, string.IsNullOrEmpty(refresh) ? null : refresh);
+                    // Valid mode found
+                    if (CurrentMode == AppMode.API)
+                    {
+                        if (!string.IsNullOrEmpty(id) && !string.IsNullOrEmpty(secret))
+                            return (id, secret, string.IsNullOrEmpty(refresh) ? null : refresh);
+                    }
+                    else if (CurrentMode == AppMode.WindowsAudio)
+                    {
+                        // No credentials needed for Windows Audio mode
+                        return ("", "", null);
+                    }
                 }
             }
 
             // --- First Time Setup Logic ---
-            MessageBox.Show("First time setup! I'm opening the Spotify Developer Dashboard.", "Setup");
-            BrowserUtil.Open(new Uri("https://developer.spotify.com/dashboard"));
+            CurrentMode = PromptForMode();
 
-            string idInput = Microsoft.VisualBasic.Interaction.InputBox("Enter Client ID:", "Setup", "");
-            string secretInput = Microsoft.VisualBasic.Interaction.InputBox("Enter Client Secret:", "Setup", "");
-
-            if (string.IsNullOrWhiteSpace(idInput) || string.IsNullOrWhiteSpace(secretInput))
+            if (CurrentMode == AppMode.API)
             {
-                Environment.Exit(0);
-            }
+                MessageBox.Show("First time setup! I'm opening the Spotify Developer Dashboard.", "Setup");
+                BrowserUtil.Open(new Uri("https://developer.spotify.com/dashboard"));
 
-            // Save using our new method
-            SaveConfig(idInput, secretInput, null, VolumeChangeAmount, VolumeUpKey, VolumeDownKey, SkipNextKey, SkipPrevKey);
-            return (idInput, secretInput, null);
+                string idInput = Microsoft.VisualBasic.Interaction.InputBox("Enter Client ID:", "Setup", "");
+                string secretInput = Microsoft.VisualBasic.Interaction.InputBox("Enter Client Secret:", "Setup", "");
+
+                if (string.IsNullOrWhiteSpace(idInput) || string.IsNullOrWhiteSpace(secretInput))
+                {
+                    Environment.Exit(0);
+                }
+
+                SaveConfig(idInput, secretInput, null, VolumeChangeAmount, VolumeUpKey, VolumeDownKey, SkipNextKey, SkipPrevKey);
+                return (idInput, secretInput, null);
+            }
+            else
+            {
+                // Windows Audio Mode selected
+                SaveConfig("", "", null, VolumeChangeAmount, VolumeUpKey, VolumeDownKey, SkipNextKey, SkipPrevKey);
+                return ("", "", null);
+            }
         }
 
         private void SaveConfig(string clientId, string clientSecret, string? refresh, int step, Keys upKey, Keys downKey, Keys nextKey, Keys prevKey)
         {
             string[] lines = {
-                "Version: API",
+                $"Mode: {CurrentMode}",
                 $"ClientID: {clientId}",
                 $"ClientSecret: {clientSecret}",
                 $"RefreshToken: {refresh ?? ""}",
@@ -230,11 +332,12 @@ namespace Spotify_Audio_Controller
                 $"SkipPrevKey: {prevKey}"
             };
             File.WriteAllLines(ConfigPath, lines);
-            Log("Config file saved with current settings (Version: API).");
+            Log($"Config file saved with current settings (Mode: {CurrentMode}).");
         }
 
         private void UpdateContextMenuText()
         {
+            currentModeToolStripMenuItem.Text = $"Current Mode: {CurrentMode}";
             changeVolumeUpKeybindToolStripMenuItem.Text = $"Change Volume Up Keybind ({VolumeUpKey})";
             changeVolumeDownKeybindToolStripMenuItem.Text = $"Change Volume Down Keybind ({VolumeDownKey})";
             changeSkipNextKeybindToolStripMenuItem.Text = $"Change Next Song Keybind ({SkipNextKey})";
@@ -251,28 +354,77 @@ namespace Spotify_Audio_Controller
             HotkeyManager.Current.AddOrReplace("SkipPrev", SkipPrevKey, SkipPrev);
         }
 
+        private void AdjustSpotifyVolume(float amount)
+        {
+            try
+            {
+                using var enumerator = new MMDeviceEnumerator();
+                using var defaultDevice = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+                var sessionManager = defaultDevice.AudioSessionManager;
+                var sessions = sessionManager.Sessions;
+
+                bool spotifyFound = false;
+
+                for (int i = 0; i < sessions.Count; i++)
+                {
+                    using var session = sessions[i];
+                    if (session.GetProcessID != 0)
+                    {
+                        try
+                        {
+                            var process = Process.GetProcessById((int)session.GetProcessID);
+                            if (process.ProcessName.Equals("Spotify", StringComparison.OrdinalIgnoreCase))
+                            {
+                                spotifyFound = true;
+                                var volumeControl = session.SimpleAudioVolume;
+                                float currentVol = volumeControl.Volume;
+                                float newVol = currentVol + amount;
+                                newVol = Math.Clamp(newVol, 0.0f, 1.0f);
+                                volumeControl.Volume = newVol;
+                                Log($"Adjusted Spotify volume to {Math.Round(newVol * 100)}%");
+                            }
+                        }
+                        catch { }
+                    }
+                }
+
+                if (!spotifyFound)
+                    Log("Spotify process not found in audio sessions. Ensure Spotify is playing audio.");
+            }
+            catch (Exception ex)
+            {
+                Log("Failed to adjust Spotify volume: " + ex.Message);
+            }
+        }
+
         private void VolumeUp(object sender, HotkeyEventArgs e)
         {
-            if (Spotify == null) return;
-
-            // 1. Instant local math
-            CurrentVolume = Math.Min(100, CurrentVolume + VolumeChangeAmount);
-            Log("User adjusted volume up to " + CurrentVolume);
-
-            // 2. Fire and forget the API request!
-            _ = SendVolumeUpdateAsync(CurrentVolume);
+            if (CurrentMode == AppMode.API)
+            {
+                if (Spotify == null) return;
+                CurrentVolume = Math.Min(100, CurrentVolume + VolumeChangeAmount);
+                Log("User adjusted volume up to " + CurrentVolume);
+                _ = SendVolumeUpdateAsync(CurrentVolume);
+            }
+            else
+            {
+                AdjustSpotifyVolume(VolumeChangeAmount / 100f);
+            }
         }
 
         private void VolumeDown(object sender, HotkeyEventArgs e)
         {
-            if (Spotify == null) return;
-
-            // 1. Instant local math
-            CurrentVolume = Math.Max(0, CurrentVolume - VolumeChangeAmount);
-            Log("User adjusted volume down to " + CurrentVolume);
-
-            // 2. Fire and forget the API request!
-            _ = SendVolumeUpdateAsync(CurrentVolume);
+            if (CurrentMode == AppMode.API)
+            {
+                if (Spotify == null) return;
+                CurrentVolume = Math.Max(0, CurrentVolume - VolumeChangeAmount);
+                Log("User adjusted volume down to " + CurrentVolume);
+                _ = SendVolumeUpdateAsync(CurrentVolume);
+            }
+            else
+            {
+                AdjustSpotifyVolume(-VolumeChangeAmount / 100f);
+            }
         }
 
         private async Task SkipNextAsync()
@@ -289,14 +441,40 @@ namespace Spotify_Audio_Controller
 
         private void SkipNext(object sender, HotkeyEventArgs e)
         {
-            if (Spotify == null) return;
-            _ = SkipNextAsync();
+            if (CurrentMode == AppMode.API)
+            {
+                if (Spotify == null) return;
+                _ = SkipNextAsync();
+            }
+            else
+            {
+                keybd_event(VK_MEDIA_NEXT_TRACK, 0, KEYEVENTF_EXTENDEDKEY, 0);
+                keybd_event(VK_MEDIA_NEXT_TRACK, 0, KEYEVENTF_KEYUP, 0);
+                Log("Skipped to next song via media key.");
+            }
         }
 
         private void SkipPrev(object sender, HotkeyEventArgs e)
         {
-            if (Spotify == null) return;
-            _ = SkipPrevAsync();
+            if (CurrentMode == AppMode.API)
+            {
+                if (Spotify == null) return;
+                _ = SkipPrevAsync();
+            }
+            else
+            {
+                keybd_event(VK_MEDIA_PREV_TRACK, 0, KEYEVENTF_EXTENDEDKEY, 0);
+                keybd_event(VK_MEDIA_PREV_TRACK, 0, KEYEVENTF_KEYUP, 0);
+                Log("Skipped to previous song via media key.");
+            }
+        }
+
+        private void changeModeToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Log("User requested mode change. Wiping config and restarting.");
+            if (File.Exists(ConfigPath)) File.Delete(ConfigPath);
+            Application.Restart();
+            Environment.Exit(0);
         }
 
         private void exitToolStripMenuItem_Click(object sender, EventArgs e)

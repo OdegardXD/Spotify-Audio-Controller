@@ -39,6 +39,8 @@ namespace Spotify_Audio_Controller
             changeVolumeChangeIncrementalToolStripMenuItem = new ToolStripMenuItem();
             changeSkipNextKeybindToolStripMenuItem = new ToolStripMenuItem();
             changeSkipPrevKeybindToolStripMenuItem = new ToolStripMenuItem();
+            changeModeToolStripMenuItem = new ToolStripMenuItem();
+            currentModeToolStripMenuItem = new ToolStripMenuItem();
             contextMenuStrip1.SuspendLayout();
             SuspendLayout();
             // 
@@ -53,9 +55,9 @@ namespace Spotify_Audio_Controller
             // 
             // contextMenuStrip1
             // 
-            contextMenuStrip1.Items.AddRange(new ToolStripItem[] { exitToolStripMenuItem, changeVolumeUpKeybindToolStripMenuItem, changeVolumeDownKeybindToolStripMenuItem, changeSkipNextKeybindToolStripMenuItem, changeSkipPrevKeybindToolStripMenuItem, changeVolumeChangeIncrementalToolStripMenuItem });
+            contextMenuStrip1.Items.AddRange(new ToolStripItem[] { currentModeToolStripMenuItem, changeModeToolStripMenuItem, changeVolumeUpKeybindToolStripMenuItem, changeVolumeDownKeybindToolStripMenuItem, changeSkipNextKeybindToolStripMenuItem, changeSkipPrevKeybindToolStripMenuItem, changeVolumeChangeIncrementalToolStripMenuItem, exitToolStripMenuItem });
             contextMenuStrip1.Name = "contextMenuStrip1";
-            contextMenuStrip1.Size = new Size(239, 114);
+            contextMenuStrip1.Size = new Size(239, 158);
             // 
             // exitToolStripMenuItem
             // 
@@ -94,7 +96,6 @@ namespace Spotify_Audio_Controller
             // 
             // timer1
             // 
-            timer1.Enabled = true;
             timer1.Interval = 10000;
             timer1.Tick += timer1_Tick;
             // 
@@ -104,6 +105,20 @@ namespace Spotify_Audio_Controller
             changeVolumeChangeIncrementalToolStripMenuItem.Size = new Size(238, 22);
             changeVolumeChangeIncrementalToolStripMenuItem.Text = "Set Volume Step Size";
             changeVolumeChangeIncrementalToolStripMenuItem.Click += changeVolumeChangeIncrementalToolStripMenuItem_Click;
+            // 
+            // changeModeToolStripMenuItem
+            // 
+            changeModeToolStripMenuItem.Name = "changeModeToolStripMenuItem";
+            changeModeToolStripMenuItem.Size = new Size(238, 22);
+            changeModeToolStripMenuItem.Text = "Change Mode";
+            changeModeToolStripMenuItem.Click += changeModeToolStripMenuItem_Click;
+            // 
+            // currentModeToolStripMenuItem
+            // 
+            currentModeToolStripMenuItem.Name = "currentModeToolStripMenuItem";
+            currentModeToolStripMenuItem.Size = new Size(238, 22);
+            currentModeToolStripMenuItem.Text = "Current Mode: Unknown";
+            currentModeToolStripMenuItem.Enabled = false;
             // 
             // Form1
             // 
@@ -127,5 +142,7 @@ namespace Spotify_Audio_Controller
         private ToolStripMenuItem changeVolumeChangeIncrementalToolStripMenuItem;
         private ToolStripMenuItem changeSkipNextKeybindToolStripMenuItem;
         private ToolStripMenuItem changeSkipPrevKeybindToolStripMenuItem;
+        private ToolStripMenuItem changeModeToolStripMenuItem;
+        private ToolStripMenuItem currentModeToolStripMenuItem;
     }
 }
