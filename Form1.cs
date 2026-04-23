@@ -95,6 +95,7 @@ namespace Spotify_Audio_Controller
             {
                 this.Invoke(new Action(() =>
                 {
+                    notifyIcon1.Visible = true;
                     RegisterHotkeys();
                     notifyIcon1.ShowBalloonTip(3000, "Spotify Controller", "Ready (Windows Audio Mode)", ToolTipIcon.Info);
                 }));
@@ -104,87 +105,139 @@ namespace Spotify_Audio_Controller
 
             this.ClientID = clientId;
 
-            // --- CASE A: We already have a Refresh Token (Silent Login) ---
-            if (!string.IsNullOrEmpty(refreshToken))
+            try
             {
-                var authenticator = new AuthorizationCodeAuthenticator(clientId, clientSecret,
-                    new AuthorizationCodeTokenResponse { RefreshToken = refreshToken });
-
-                // Subscribe to token refreshed event to update config.txt
-                authenticator.TokenRefreshed += (sender, token) =>
+                // --- CASE A: We already have a Refresh Token (Silent Login) ---
+                if (!string.IsNullOrEmpty(refreshToken))
                 {
-                    var lines = File.ReadAllLines(ConfigPath);
-                    if (lines.Length >= 3)
+                    var authenticator = new AuthorizationCodeAuthenticator(clientId, clientSecret,
+                        new AuthorizationCodeTokenResponse { RefreshToken = refreshToken });
+
+                    // Subscribe to token refreshed event to update config.txt
+                    authenticator.TokenRefreshed += (sender, token) =>
                     {
-                        if (lines.Length < 4 || lines[3] != "RefreshToken: " + token.RefreshToken)
+                        var lines = File.ReadAllLines(ConfigPath);
+                        if (lines.Length >= 3)
                         {
-                            SaveConfig(clientId, clientSecret, token.RefreshToken, VolumeChangeAmount, VolumeUpKey, VolumeDownKey, SkipNextKey, SkipPrevKey);
-                            Log("Refresh token updated (silent login).");
+                            if (lines.Length < 4 || lines[3] != "RefreshToken: " + token.RefreshToken)
+                            {
+                                SaveConfig(clientId, clientSecret, token.RefreshToken, VolumeChangeAmount, VolumeUpKey, VolumeDownKey, SkipNextKey, SkipPrevKey);
+                                Log("Refresh token updated (silent login).");
+                            }
                         }
+                    };
+
+                    var config = SpotifyClientConfig.CreateDefault().WithAuthenticator(authenticator);
+                    Spotify = new SpotifyClient(config);
+
+                    await SyncVolumeWithSpotify(true); // Throw if fails
+                    this.Invoke(new Action(() =>
+                    {
+                        notifyIcon1.Visible = true;
+                        RegisterHotkeys();
+                        timer1.Start();
+                        notifyIcon1.ShowBalloonTip(3000, "Spotify Controller", "Ready (Auto-Refreshed)", ToolTipIcon.Info);
+                    }));
+                    Log("Silent login successful.");
+                    return;
+                }
+
+                // --- CASE B: First time login (Browser Login) ---
+                AuthServer = new EmbedIOAuthServer(new Uri("http://127.0.0.1:5000/callback"), 5000);
+                await AuthServer.Start();
+
+                AuthServer.AuthorizationCodeReceived += async (sender, response) =>
+                {
+                    try
+                    {
+                        await AuthServer.Stop();
+                        var config = SpotifyClientConfig.CreateDefault();
+                        var tokenResponse = await new OAuthClient(config).RequestToken(
+                            new AuthorizationCodeTokenRequest(clientId, clientSecret, response.Code, new Uri("http://127.0.0.1:5000/callback"))
+                        );
+
+                        SaveConfig(clientId, clientSecret, tokenResponse.RefreshToken, VolumeChangeAmount, VolumeUpKey, VolumeDownKey, SkipNextKey, SkipPrevKey);
+                        Log("Refresh token saved (first login).");
+
+                        var authenticator = new AuthorizationCodeAuthenticator(clientId, clientSecret, tokenResponse);
+
+                        authenticator.TokenRefreshed += (s, token) =>
+                        {
+                            var lines = File.ReadAllLines(ConfigPath);
+                            if (lines.Length >= 3)
+                            {
+                                if (lines.Length < 4 || lines[3] != "RefreshToken: " + token.RefreshToken)
+                                {
+                                    SaveConfig(clientId, clientSecret, token.RefreshToken, VolumeChangeAmount, VolumeUpKey, VolumeDownKey, SkipNextKey, SkipPrevKey);
+                                    Log("Refresh token updated (browser login).");
+                                }
+                            }
+                        };
+
+                        Spotify = new SpotifyClient(SpotifyClientConfig.CreateDefault().WithAuthenticator(authenticator));
+
+                        await SyncVolumeWithSpotify(true); // Throw if fails
+                        this.Invoke(new Action(() =>
+                        {
+                            notifyIcon1.Visible = true;
+                            RegisterHotkeys();
+                            timer1.Start();
+                            notifyIcon1.ShowBalloonTip(3000, "Spotify Controller", "Connected!", ToolTipIcon.Info);
+                        }));
+                        Log("First time login successful.");
+                    }
+                    catch (Exception ex)
+                    {
+                        HandleAuthError(ex);
                     }
                 };
 
-                var config = SpotifyClientConfig.CreateDefault().WithAuthenticator(authenticator);
-                Spotify = new SpotifyClient(config);
-
-                await SyncVolumeWithSpotify();
-                this.Invoke(new Action(() =>
+                var request = new LoginRequest(AuthServer.BaseUri, clientId, LoginRequest.ResponseType.Code)
                 {
-                    RegisterHotkeys();
-                    timer1.Start();
-                    notifyIcon1.ShowBalloonTip(3000, "Spotify Controller", "Ready (Auto-Refreshed)", ToolTipIcon.Info);
-                }));
-                Log("Silent login successful.");
-                return;
+                    Scope = new[] { Scopes.UserModifyPlaybackState, Scopes.UserReadPlaybackState }
+                };
+                BrowserUtil.Open(request.ToUri());
+            }
+            catch (Exception ex)
+            {
+                HandleAuthError(ex);
+            }
+        }
+
+        private void HandleAuthError(Exception ex)
+        {
+            string detail = ex.Message;
+            if (ex is APIException apiEx)
+            {
+                detail = $"Status: {apiEx.Response?.StatusCode}, Message: {apiEx.Message}";
+                if (apiEx.Response?.Body != null)
+                {
+                    detail += $", Body: {apiEx.Response.Body}";
+                }
             }
 
-            // --- CASE B: First time login (Browser Login) ---
-            AuthServer = new EmbedIOAuthServer(new Uri("http://127.0.0.1:5000/callback"), 5000);
-            await AuthServer.Start();
+            Log($"CRITICAL AUTH ERROR: {ex.GetType().Name} - {detail}");
+            Log($"Stack Trace: {ex.StackTrace}");
 
-            AuthServer.AuthorizationCodeReceived += async (sender, response) =>
+            DialogResult result = MessageBox.Show(
+                $"Spotify Authentication failed!\n\nThis usually means your Client ID or Secret are invalid or have expired.\n\nError: {ex.Message}\n\nWould you like to reset your configuration and restart?",
+                "Authentication Error",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Error
+            );
+
+            if (result == DialogResult.Yes)
             {
-                await AuthServer.Stop();
-                var config = SpotifyClientConfig.CreateDefault();
-                var tokenResponse = await new OAuthClient(config).RequestToken(
-                    new AuthorizationCodeTokenRequest(clientId, clientSecret, response.Code, new Uri("http://127.0.0.1:5000/callback"))
-                );
-
-                SaveConfig(clientId, clientSecret, tokenResponse.RefreshToken, VolumeChangeAmount, VolumeUpKey, VolumeDownKey, SkipNextKey, SkipPrevKey);
-                Log("Refresh token saved (first login).");
-
-                var authenticator = new AuthorizationCodeAuthenticator(clientId, clientSecret, tokenResponse);
-
-                authenticator.TokenRefreshed += (s, token) =>
-                {
-                    var lines = File.ReadAllLines(ConfigPath);
-                    if (lines.Length >= 3)
-                    {
-                        if (lines.Length < 4 || lines[3] != "RefreshToken: " + token.RefreshToken)
-                        {
-                            SaveConfig(clientId, clientSecret, token.RefreshToken, VolumeChangeAmount, VolumeUpKey, VolumeDownKey, SkipNextKey, SkipPrevKey);
-                            Log("Refresh token updated (browser login).");
-                        }
-                    }
-                };
-
-                Spotify = new SpotifyClient(SpotifyClientConfig.CreateDefault().WithAuthenticator(authenticator));
-
-                await SyncVolumeWithSpotify();
-                this.Invoke(new Action(() =>
-                {
-                    RegisterHotkeys();
-                    timer1.Start();
-                    notifyIcon1.ShowBalloonTip(3000, "Spotify Controller", "Connected!", ToolTipIcon.Info);
-                }));
-                Log("First time login successful.");
-            };
-
-            var request = new LoginRequest(AuthServer.BaseUri, clientId, LoginRequest.ResponseType.Code)
+                Log("User opted to reset config after auth error.");
+                if (File.Exists(ConfigPath)) File.Delete(ConfigPath);
+                Application.Restart();
+                Environment.Exit(0);
+            }
+            else
             {
-                Scope = new[] { Scopes.UserModifyPlaybackState, Scopes.UserReadPlaybackState }
-            };
-            BrowserUtil.Open(request.ToUri());
+                Log("User declined reset after auth error. Exiting.");
+                Environment.Exit(0);
+            }
         }
 
         private AppMode PromptForMode()
@@ -572,7 +625,7 @@ namespace Spotify_Audio_Controller
             base.OnKeyDown(e);
         }
 
-        private async Task SyncVolumeWithSpotify()
+        private async Task SyncVolumeWithSpotify(bool throwOnFailure = false)
         {
             if (Spotify == null) return;
 
@@ -589,12 +642,13 @@ namespace Spotify_Audio_Controller
             catch (Exception ex)
             {
                 Log("Sync failed: " + ex.Message);
+                if (throwOnFailure) throw;
             }
         }
 
         private async void timer1_Tick(object sender, EventArgs e) // Added this so that IF the user decides to change volume manually in the spotify app then this will sync eventually. It runs on a timer that executes every 10000MS aka 10 seconds.
         {
-            await SyncVolumeWithSpotify();
+            await SyncVolumeWithSpotify(false);
             Log("Synced Audio With Spotify (Timer)");
         }
 

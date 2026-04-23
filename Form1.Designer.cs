@@ -51,7 +51,7 @@ namespace Spotify_Audio_Controller
             notifyIcon1.ContextMenuStrip = contextMenuStrip1;
             notifyIcon1.Icon = (Icon)resources.GetObject("notifyIcon1.Icon");
             notifyIcon1.Text = "Ode's Spotify Audio Controller";
-            notifyIcon1.Visible = true;
+            notifyIcon1.Visible = false;
             // 
             // contextMenuStrip1
             // 
